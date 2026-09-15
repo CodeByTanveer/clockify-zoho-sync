@@ -8,14 +8,15 @@ description: Sync Clockify time entries into Zoho People timesheet entries (time
 Pulls Clockify time entries for a date/range and writes them straight as
 Zoho People timelog entries (`addtimelog`) -- no mapping file, no setup
 beyond env vars. Zoho project = Clockify project name, Zoho job = the
-entry's description (Zoho auto-creates both on first use). **Always
-dry-runs first** -- never pushes without a preview being shown and the
-user explicitly asking to proceed.
+entry's (first) Clockify tag, Zoho work item/description = the entry's
+Clockify description (Zoho auto-creates the project/job on first use).
+An entry with no tag is skipped -- nowhere to file it as a Zoho job.
+**Always dry-runs first** -- never pushes without a preview being shown
+and the user explicitly asking to proceed.
 
-Tradeoff of zero-config: every distinct Clockify description becomes its
-own permanent Zoho job. Encourage the user to reuse consistent wording
-for the same kind of work rather than writing a fresh description every
-time.
+Tradeoff of zero-config: every distinct Clockify tag becomes its own
+permanent Zoho job. Encourage the user to keep one consistent tag per
+kind of work rather than inventing new tags freely.
 
 ## Required env vars
 
@@ -68,8 +69,8 @@ this script -- see profile block for env vars it sets).
 Every run (including `--push`) prints:
 - entries that will be pushed, grouped, with total hours
 - entries already present in Zoho for that date/job/description (skipped, not re-pushed)
-- entries whose Clockify project isn't in `config/mapping.json` (skipped)
-- entries whose description matched no rule for a known project (skipped, "unmapped")
+- entries with no Clockify project (skipped, "No project on entry")
+- entries with no Clockify tag (skipped, "No tag on entry" -- no way to pick a Zoho job)
 
 **Show this preview to the user and get explicit confirmation before
 re-running with `--push`.** Don't chain dry-run and `--push` in one go.
@@ -84,6 +85,13 @@ re-running with `--push`.** Don't chain dry-run and `--push` in one go.
   Keep that in mind if you edit `sync.py`.
 - An entry with no Clockify project attached is skipped (nowhere to file
   it in Zoho) -- shown in the preview under "No project on entry".
+- An entry with no Clockify tag is skipped -- shown under "No tag on
+  entry". If an entry has multiple tags, only the first is used as the
+  Zoho job; the rest are ignored.
+- Job name = Clockify tag, work item/description = Clockify description
+  -- don't confuse the two. (Earlier version of this script used the
+  description as the job name, which floods Zoho with one job per
+  distinct description instead of one job per tag -- fixed 2026-09-15.)
 - Zoho `edittimelog` looks like a partial-patch endpoint from the docs
   but actually requires every field to be resent (hours, workDate,
   jobId, billingStatus) or it errors -- always resend the full set.

@@ -18,10 +18,11 @@ Required env vars:
 
 No mapping file, no setup beyond env vars. Each Clockify entry becomes a
 Zoho timelog directly: Zoho project = Clockify project name, Zoho job =
-the entry's description (trimmed). Zoho auto-creates the project/job on
-first use if they don't already exist. Tradeoff: every distinct
-description becomes its own permanent Zoho job -- keep descriptions
-consistent (reuse the same wording for the same kind of work) to avoid
+the entry's (first) tag name, Zoho work item/description = the entry's
+description. An entry with no tag is skipped (nowhere to file it as a
+Zoho job). Zoho auto-creates the project/job on first use if they don't
+already exist. Tradeoff: every distinct tag becomes its own permanent
+Zoho job -- keep tagging consistent (one tag per kind of work) to avoid
 cluttering the Zoho job list.
 """
 import argparse
@@ -84,6 +85,13 @@ def fetch_clockify_projects():
     url = f"{CLOCKIFY_BASE}/workspaces/{workspace}/projects?page-size=200"
     projects = http("GET", url, headers=clockify_headers())
     return {p["id"]: p["name"] for p in projects}
+
+
+def fetch_clockify_tags():
+    workspace = env("CLOCKIFY_WORKSPACE_ID")
+    url = f"{CLOCKIFY_BASE}/workspaces/{workspace}/tags?page-size=200"
+    tags = http("GET", url, headers=clockify_headers())
+    return {t["id"]: t["name"] for t in tags}
 
 
 # ---------- Zoho ----------
@@ -246,6 +254,7 @@ def main():
     print(f"Fetching Clockify entries {start_date}..{end_date} ...")
     entries = fetch_clockify_entries(start_iso, end_iso)
     projects = fetch_clockify_projects()
+    tags = fetch_clockify_tags()
 
     token = zoho_access_token()
     print("Fetching existing Zoho People timelog entries (dedupe check) ...")
@@ -253,6 +262,7 @@ def main():
 
     to_push = []
     no_project = []
+    no_tag = []
     already_logged = []
     in_progress = []
 
@@ -267,8 +277,13 @@ def main():
             no_project.append(e)
             continue
 
+        tag_ids = e.get("tagIds") or []
+        job_name = tags.get(tag_ids[0]) if tag_ids else None
+        if not job_name:
+            no_tag.append(e)
+            continue
+
         description = (e.get("description") or "").strip() or "(no description)"
-        job_name = description
 
         minutes = parse_iso_duration_minutes(e["timeInterval"]["duration"])
         work_date = e["timeInterval"]["zonedStart"][:10]
@@ -301,6 +316,11 @@ def main():
     if no_project:
         print(f"\nNo project on entry, can't determine Zoho project (skipped, {len(no_project)}):")
         for e in no_project:
+            print(f"  {e.get('description') or '(no description)'}")
+
+    if no_tag:
+        print(f"\nNo tag on entry, can't determine Zoho job (skipped, {len(no_tag)}):")
+        for e in no_tag:
             print(f"  {e.get('description') or '(no description)'}")
 
     if in_progress:
